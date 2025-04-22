@@ -9,6 +9,7 @@ interface Message {
   documentFileLink?: string;
   sender: string;
   timestamp: string;
+  platformId?: string; // Optional in message since existing messages may not have it
 }
 
 interface WebhookPayload {
@@ -18,6 +19,7 @@ interface WebhookPayload {
   imageFileLink?: string;
   documentFileLink?: string;
   sender: string;
+  platformId: string; // Added as required field
 }
 
 export class RoomDO extends DurableObject<CloudflareBindings> {
@@ -82,6 +84,7 @@ export class RoomDO extends DurableObject<CloudflareBindings> {
           videoFileLink: payload.videoFileLink || "",
           imageFileLink: payload.imageFileLink || "",
           documentFileLink: payload.documentFileLink || "",
+          platformId: payload.platformId, // Add platformId to message
         };
 
         // Broadcast the message to all connected clients
@@ -97,6 +100,40 @@ export class RoomDO extends DurableObject<CloudflareBindings> {
           headers: { "Content-Type": "application/json" },
         });
       }
+    });
+
+    // Store arbitrary JSON data for a room
+    this.app.post("/room/:id/data", async (c) => {
+      const id = c.req.param("id");
+      this.roomId = id;
+      try {
+        const data = await c.req.json<any>();
+        await this.state.storage.put(`data:${id}`, data);
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    });
+
+    // Retrieve stored JSON data for a room
+    this.app.get("/room/:id/data", async (c) => {
+      const id = c.req.param("id");
+      this.roomId = id;
+      const data = await this.state.storage.get(`data:${id}`);
+      if (data === undefined) {
+        return new Response(JSON.stringify({ error: "No data found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(data), {
+        headers: { "Content-Type": "application/json" },
+      });
     });
   }
 
